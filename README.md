@@ -12,7 +12,7 @@
 
 利用 vector<string> gTBuffer 建立 Token 緩衝區，並透過 gCur 指標精準控制解析進度。
 
-多層級錯誤偵測機制 (Error Handling)：
+Error Handling：
 
     詞法層級 (Lexical)：辨識非法字元。
 
@@ -20,14 +20,14 @@
 
     語義層級 (Semantic)：透過 gDefVar 與 gDefFunc 維護符號表，即時檢測「未定義識別碼 (Undefined Identifier)」。
 
-動態符號表管理 (Symbol Table Management)：
+Symbol Table Management：
 
-使用 vector 結構儲存定義過的變數 (gDefVar)、型別 (gVarType) 及函式 (gDefFunc)。
-支援作用域管理，區分全域變數與函數內部參數 (gCSDefVar)。
+    使用 vector 結構儲存定義過的變數 (gDefVar)、型別 (gVarType) 及函式 (gDefFunc)。
+    支援作用域管理，區分全域變數與函數內部參數 (gCSDefVar)。
 
-程式碼美化引擎 (Pretty Printer)：
+Pretty Printer：
 
-   解析過程中同步建立程式結構，並根據文法邏輯（如 if, while, {}）進行自動縮排與格式化輸出。
+    解析過程中同步建立程式結構，並根據文法邏輯（如 if, while, {}）進行自動縮排與格式化輸出。
 
 ## 🛠 技術棧 (Tech Stack)
 開發語言：C++
