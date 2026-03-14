@@ -1,0 +1,2159 @@
+# include <stdlib.h>
+# include <iostream>
+# include <string>
+# include <vector>
+# include <sstream>
+# include <cstdlib>
+
+using namespace std;
+
+string gToken;
+string gNextToken;
+char gExtraGetChar;
+int gCur; // 讀到 gTBuffer中哪一個位置了
+int gParenthesis; // ()
+int gSquareBracket; // []
+int gNumOfLine; // token在哪一行
+bool gHasUnexpected; // 出現error設為true 
+bool gEXIT; // 程式結束 
+bool gAPList; // actual_parameter_list
+bool gRAR; // exp ? exp : exp ;
+bool gCoutinID; // cout cin 是id
+bool gCoutin;
+bool gCState;
+bool gIF;
+bool gDO;
+string gTtoken;
+int gTL;
+
+vector<string> gTBuffer; // token buffer
+vector<int> gTokenLine; // token所在的行數 
+vector<string> glexical_vec; // 保留字 
+vector<string> goperand_vec; // 符號 
+vector<string> gDefVar; // 存定義過的變數 
+vector<string> gVarType; // 存定義過的變數的型別 
+vector<string> gDefFunc; // 存定義過的函式 
+vector<string> gCSDefVar; // 存 函數參數列表變數 和 { }內的宣告變數 
+vector<string> gFuncText; 
+vector<string> gFuncRef; 
+
+void ListAllVariables() ; // 列出所有變數 並依字串大小排列
+void ListAllFunctions() ; // 列出所有函式 並依字串大小排列
+void ListVariable( string id ) ;   // (char[] var)列出該變數以及型別
+void ListFunction( string id ) ; // (char[] fun)列出該函式與定義的程式
+
+bool CheckDefVar( string str ) ; // semantic error
+string Token() ;
+bool IsType( string str ) ;
+bool FPList( string str ) ;
+bool CState( string str ) ;
+void Unexpected_token( string wrongStr ) ;
+bool Definition( string t ) ;
+bool Declaration( string t ) ;
+int Parser( string t ) ; // syntaceical error
+void InitOperandVec() ;
+void InitLexicalVec() ;
+void ClearVec() ;
+bool CheckToken() ; // lexical error
+bool CheckDone() ;
+bool Statement( string t ) ;
+bool Expression( string t ) ;
+bool BExp( string t ) ;
+bool IsConstant( string str ) ;
+bool IsLexical_vec( string str ) ;
+bool IsIdentifier( string str ) ;
+bool IsInt( string str ) ;
+bool IsNum( string str ) ;
+bool IsDigit( char ch ) ;
+bool IsLetter( char ch ) ;
+bool IsOparend( string str ) ;
+bool IsShiftOP( string t ) ;
+bool IsSign( string t ) ;
+bool IsLogicalOP( string t ) ;
+bool IsArithOP( string t ) ;
+bool IsPPMM( string t ) ;
+bool IsGrant( string t ) ;
+bool IsType( string str ) ;
+bool IsAllCalOP( string t ) ;
+void GetToken() ;
+void Init() ;
+void ReSet() ;
+void StoreDefVar() ;
+void StoreDefFunc() ;
+bool IsList( int k ) ;
+void UndefId( string id, int line ) ;
+bool CheckDefFunc( string id, int line ) ;
+bool CheckDefVar( string id, int line ) ;
+bool Unary_exp( string t ) ;
+int OriFunc( string t, int line ) ;
+
+void Test() {
+  cout << "=== test ===" << endl;
+  for ( int i = 0 ; i < gTBuffer.size() ; i++ ) {
+    cout << "Line " << gTokenLine[i] << ": " << gTBuffer[i] << endl;
+  } // end for
+
+} // end Test()
+
+int main() {
+  cout << "Our-C running ..." << endl;
+  Init();
+  string tt;
+  int p = 0;
+  int testnum = 0;
+  
+  cin >> testnum;
+  
+  while ( !gEXIT ) {
+    cout << "> " ;
+    
+    if ( gTtoken != "\0" ) {
+      // cout << "gTtoken " << gTtoken ;
+      tt = gTtoken;
+      gTtoken = "\0";
+    } // end if
+    else tt = Token();
+    
+    p = Parser( tt ); // 文法檢查( definition/ statement )
+    
+    // Test() ;
+    
+    if ( p == 0 ) {
+      // cout << "error: " << "\"" << gToken << "\"" << endl;
+      gNumOfLine = 1;
+      while ( gToken != "\n" )
+        GetToken();
+  
+    } // end if
+    else {
+      
+      if ( CheckDone() ) gEXIT = true;
+      else if ( p == 1 ) { // store def variable
+      
+        if ( gTBuffer[2] == "(" ) StoreDefFunc();
+        else StoreDefVar();
+          
+      } // end if ( p == 1 )
+      else cout << "Statement executed ..." << endl;
+      
+      gNumOfLine = 0;
+    } // end else ( Parser )
+    
+    ReSet(); 
+    
+  } // end while (EXIT)
+  
+  cout << "Our-C exited ..." << endl; // 程式結束 
+  ClearVec();
+  
+} // end main()
+
+void Init() {
+  InitLexicalVec();
+  InitOperandVec();
+  gCur = 0; 
+  gParenthesis = 0;
+  gSquareBracket = 0;
+  gToken = "\0";
+  gNextToken = "\0";
+  gExtraGetChar = '\0';
+  gNumOfLine = 0;
+  gHasUnexpected = false;
+  gEXIT = false;
+  gAPList = false;
+  gRAR = false;
+  gCoutinID = false;
+  gCoutin = false; 
+  gCState = false;
+  gIF = false;
+  gDO = false;
+  gTtoken = "\0";
+} // end Init()
+
+void InitOperandVec() {
+  goperand_vec.push_back( "(" );  // 0
+  goperand_vec.push_back( ")" );  // 1
+  goperand_vec.push_back( "[" );  // 2
+  goperand_vec.push_back( "]" );  // 3
+  goperand_vec.push_back( "{" );  // 4
+  goperand_vec.push_back( "}" );  // 5
+  goperand_vec.push_back( "+" );  // 6
+  goperand_vec.push_back( "-" );  // 7
+  goperand_vec.push_back( "*" );  // 8
+  goperand_vec.push_back( "/" );  // 9
+  goperand_vec.push_back( "%" );  // 10
+  goperand_vec.push_back( "^" );  // 11
+  goperand_vec.push_back( ">" );  // 12
+  goperand_vec.push_back( "<" );  // 13
+  goperand_vec.push_back( ">=" ); // 14
+  goperand_vec.push_back( "<=" ); // 15
+  goperand_vec.push_back( "==" ); // 16
+  goperand_vec.push_back( "!=" ); // 17
+  goperand_vec.push_back( "&" );  // 18
+  goperand_vec.push_back( "|" );  // 19
+  goperand_vec.push_back( "=" );  // 20
+  goperand_vec.push_back( "!" );  // 21
+  goperand_vec.push_back( "&&" ); // 22
+  goperand_vec.push_back( "||" ); // 23
+  goperand_vec.push_back( "+=" ); // 24
+  goperand_vec.push_back( "-=" ); // 25
+  goperand_vec.push_back( "*=" ); // 26
+  goperand_vec.push_back( "/=" ); // 27
+  goperand_vec.push_back( "%=" ); // 28 
+  goperand_vec.push_back( "++" ); // 29
+  goperand_vec.push_back( "--" ); // 30
+  goperand_vec.push_back( ">>" ); // 31
+  goperand_vec.push_back( "<<" ); // 32
+  goperand_vec.push_back( ";" );  // 33
+  goperand_vec.push_back( "," );  // 34
+  goperand_vec.push_back( "?" );  // 35
+  goperand_vec.push_back( ":" );  // 36
+  
+} // end InitOperandVec()
+
+void InitLexicalVec() {
+  glexical_vec.push_back( "int" );
+  glexical_vec.push_back( "float" );
+  glexical_vec.push_back( "char" );
+  glexical_vec.push_back( "bool" );
+  glexical_vec.push_back( "string" );
+  glexical_vec.push_back( "void" );
+  glexical_vec.push_back( "if" );
+  glexical_vec.push_back( "else" );
+  glexical_vec.push_back( "while" );
+  glexical_vec.push_back( "do" );
+  glexical_vec.push_back( "return" );
+} // end InitLexicalVec()
+
+void ReSet() {
+  gTBuffer.clear();
+  gTokenLine.clear();
+  gCSDefVar.clear();
+  gCur = 0; 
+  gParenthesis = 0;
+  gSquareBracket = 0;
+  gToken = "\0";
+  gNextToken = "\0";
+  gExtraGetChar = '\0';
+  gHasUnexpected = false;
+  gAPList = false;
+  gRAR = false;
+  gCoutinID = false;
+  gCoutin = false;
+  gCState = false;
+  gIF = false;
+  gDO = false;
+} // ReSet()
+
+void ClearVec() {
+  gTBuffer.clear();
+  gTokenLine.clear();
+  glexical_vec.clear();
+  goperand_vec.clear();
+  gDefVar.clear(); // 存定義過的變數 
+  gVarType.clear(); // 存定義過的變數的型別 
+  gDefFunc.clear();
+  gCSDefVar.clear();
+  gFuncText.clear(); 
+  gFuncRef.clear();
+} // end ClearVec()
+
+bool CheckDefVar( string id, int line ) {
+    
+  if ( gCState ) { // 大括號裡面的 
+    for ( int i = 0 ; i < gCSDefVar.size() ; i++ ) {
+      if ( gCSDefVar[i] == id ) return true;
+      
+    } // end for 
+  } // end if
+    
+  for ( int j = 0 ; j < gDefVar.size() ; j++ ) {
+    if ( gDefVar[j] == id ) return true;
+  } // end for 
+    
+  return false;
+} // end CheckDefVar()
+
+bool CheckDefFunc( string id, int line ) {
+  
+  for ( int i = 0 ; i < gDefFunc.size() ; i++ ) {
+    if ( gDefFunc[i] == id ) return true;
+  } // end for
+  
+  if ( id == "ListAllVariables" || id == "ListAllFunctions" ) return true;
+  else if ( id == "ListVariable" || id == "ListFunction" ) return true;
+  
+  return false;    
+} // end CheckDefFunc()
+
+void UndefId( string id, int line ) {
+  cout << "Line " << line << " : undefined identifier : '" ;
+  cout << id << "'" << endl ;
+  gHasUnexpected = true;
+  
+} // end UndefId()
+
+void Unexpected_token( string wrongStr ) {
+  
+  if ( wrongStr != "\0" ) {
+    if ( gNumOfLine == 0 ) gNumOfLine = 1;
+    cout << "Line " << gNumOfLine << " : unexpected token : " << "'" << wrongStr << "'" << endl;  
+  } // end if
+    
+  gHasUnexpected = true;
+} // end Unexpected_token()
+
+void ListAllFunctions() { // 列出所有函式 並依字串大小排列
+  vector<string> vec = gDefFunc;
+  string key;
+  int j;
+  for ( int i = 0; i < vec.size() ; i++ ) {
+    key = vec[i];
+    j = i - 1;
+    while ( j >= 0 && vec[j] > key ) {
+      vec[j + 1] = vec[j];
+      --j;
+    } // end while
+    
+    vec[j + 1] = key;
+  } // end for
+  
+  for ( int i = 0; i < vec.size() ; i++ ) {
+    cout << vec[i] << "()" << endl;
+  } // end for
+  
+  vec.clear();
+} // end ListAllFunctions()
+
+void UpdateNewDefFunc( string id ) {
+  int lenOfDefFunc = gDefFunc.size();
+  
+  for ( int i = 0 ; i < lenOfDefFunc ; i++ ) {
+    if ( gDefFunc[i] == id ) {
+      gDefFunc.erase( gDefFunc.begin() + i );
+      i = lenOfDefFunc;
+    } // end if
+  } // end for
+  
+  for ( int j = 0 ; j < gFuncRef.size() ; j++ ) {
+    while ( j < gFuncRef.size() && gFuncRef[j] == id ) {
+      gFuncRef.erase( gFuncRef.begin() + j );
+      gFuncText.erase( gFuncText.begin() + j );
+      
+    } // end while
+  } // end for
+} // UpdateNewDefFunc()
+
+void StoreDefFunc() { // ----要把裡面的東西存起來
+  // gDefFunc gFuncText gFuncRef
+  int numOfToken = gTBuffer.size();
+  string id = gTBuffer[1];
+  string funcType = gTBuffer[0];
+  
+  if ( CheckDefFunc( id, gTokenLine[1] ) ) {
+    cout << "New definition of " << id << "() entered ..." << endl;
+    UpdateNewDefFunc( id );
+  } // end if
+  else {
+    cout << "Definition of " << id << "() entered ..." << endl;
+  } // end else
+  
+  gDefFunc.push_back( id );
+  
+  for ( int i = 0 ; i < numOfToken ; i++ ) {
+    gFuncText.push_back( gTBuffer[i] );
+    gFuncRef.push_back( id );
+      
+  } // end for
+} // end StoreDefFunc()
+
+void ListAllVariables() { // 列出所有變數 並依字串大小排列 
+  vector<string> vec;
+  vec.clear();
+  
+  for ( int k = 0 ; k < gDefVar.size() ; k++ ) {
+    if ( gDefVar[k] == "[" ) {
+      while ( gDefVar[k] != "]" )
+        k++;
+    } // end if
+    else vec.push_back( gDefVar[k] ) ;
+    
+  } // end for
+  
+  string key;
+  int j;
+  for ( int i = 0; i < vec.size() ; i++ ) {
+    key = vec[i];
+    j = i - 1;
+    while ( j >= 0 && vec[j] > key ) {
+      vec[j + 1] = vec[j];
+      --j;
+    } // end while
+    
+    vec[j + 1] = key;
+  } // end for
+  
+  for ( int i = 0 ; i < vec.size() ; i++ ) {
+    cout << vec[i] << endl;
+  } // end for
+  
+  vec.clear();
+} // end ListAllVariables()
+
+void UpdateNewDefVar( string id, string type ) {
+  for ( int k = 0 ; k < gDefVar.size() ; k++ ) {
+    if ( gDefVar[k] == id ) {
+      
+      gDefVar.erase( gDefVar.begin() + k );
+      gVarType.erase( gVarType.begin() + k );
+      
+      if ( gDefVar[k] == "[" ) {
+          
+        while ( gDefVar[k] != "]" ) {
+          gDefVar.erase( gDefVar.begin() + k );
+          gVarType.erase( gVarType.begin() + k );
+        } // end while
+        
+        gDefVar.erase( gDefVar.begin() + k );
+        gVarType.erase( gVarType.begin() + k );
+        
+      } // end if
+      
+      gDefVar.push_back( id );
+      gVarType.push_back( type );
+      k = gDefVar.size();
+    } // end if
+  } // end for
+} // end UpdateNewDefVar()
+
+void StoreDefVar() {
+  int numOfToken = gTBuffer.size();
+  string type = "\0";
+  int i = 0; // index
+  
+  while ( i < numOfToken ) {
+    
+    if ( i == 0 ) {
+      if ( IsType( gTBuffer[i] ) ) type = gTBuffer[i];
+      else cout << "Can't find type." << endl;
+      
+    } // end if
+    else if ( gTBuffer[i] != ";" && gTBuffer[i] != "," ) {
+        
+      if ( gTBuffer[i] == "[" ) { // 變數 [ 陣列 ] 
+        while ( gTBuffer[i] != "]" ) {
+          gDefVar.push_back( gTBuffer[i] );
+          gVarType.push_back( type );
+          i++;
+          
+        } // end while
+        
+        gDefVar.push_back( gTBuffer[i] );
+        gVarType.push_back( type );
+      } // end if
+      else {
+        if ( CheckDefVar( gTBuffer[i], gTokenLine[i] ) ) {
+          UpdateNewDefVar( gTBuffer[i], type ); // 要改gDefVar、 gVarType
+          cout << "New definition of " << gTBuffer[i] << " entered ..." << endl;
+        } // end if
+        else {
+          gDefVar.push_back( gTBuffer[i] );
+          gVarType.push_back( type );
+          cout << "Definition of " << gTBuffer[i] << " entered ..." << endl;  
+        } // end else  
+      } // end else
+    } // end else if
+      
+    i++;
+  } // end while
+} // end StoreDefVar()
+
+void ListVariable( string id ) {
+  int lenOfVar = gDefVar.size();
+  string type = "\0";  
+  
+  if ( lenOfVar == 0 ) cout << "empty" << endl;
+  for ( int i = 0 ; i < lenOfVar ; i++ ) {
+    if ( gDefVar[i] == id ) {
+      if ( gVarType[i] == "bool" ) cout << "boolean " << id ;
+      else cout << gVarType[i] << " " << id ;
+      
+      i++;
+      if ( gDefVar[i] == "[" ) {
+        cout << "[ ";
+        i++;
+        while ( gDefVar[i] != "]" ) {
+          cout << gDefVar[i] ;
+          i++;
+        } // end while
+            
+        cout << " ] ;" << endl ;
+      } // end if
+      else cout << " ;" << endl;
+    } // end if
+  } // end for
+} // end ListVariable()
+
+int PrintCState( string id, int start, string indent ) { // {...}
+  if ( gFuncRef[start] != id ) return start;
+  int i = start;
+  bool state = true;
+  int state_begin = i;
+  string in = indent;
+  bool leave = false;
+  bool isIF = false;
+  
+  if ( gFuncText[i] == "}" ) {
+    cout << "}" << endl;
+    return i+1;
+  } // end if
+  
+  while ( i < gFuncText.size() && !leave && gFuncText[i] != "}" ) { // 裡面會有while、if 
+    if ( gFuncRef[i] != id ) return i;
+    cout << indent;
+    state = true;
+    state_begin = i;
+    
+    while ( i < gFuncText.size() && !leave && gFuncText[i] != ";" ) { // statement 
+      if ( gFuncRef[i] != id ) return i;
+      
+      if ( gFuncText[i] == "{" ) {
+        in += "  ";
+        cout << " {" << endl;
+        i = PrintCState( id, i+1, in );
+        state = false;
+      } // end if
+       
+      if ( gFuncText[i] == "}" ) 
+        leave = true;
+      else if ( gFuncText[i] == "do" || gFuncText[i] == "else" ) {
+        cout << gFuncText[i] << endl << indent << "  " << gFuncText[i+1];
+        i++;
+      } // end else if
+      else if ( isIF && gFuncText[i] == ")" ) {
+        cout << " )" << endl << indent << "  " << gFuncText[i+1];
+        i++;
+      } // end else if
+      else if ( gFuncText[i] == "," )
+        cout << gFuncText[i];
+      else if ( gFuncText[i] == "(" ) {
+        if ( gFuncText[i-1] != "if" && gFuncText[i-1] != "while" )
+          cout << gFuncText[i];
+        else {
+          cout << " " << gFuncText[i] ;  
+          isIF = true;
+        } // end else
+      } // end else if
+      else if ( gFuncText[i] == "[" )
+        cout << gFuncText[i] ;
+      else if ( gFuncText[i] == "++" || gFuncText[i] == "--" )
+        cout << gFuncText[i] ;
+      else {
+        if ( !state ) 
+          cout << indent << gFuncText[i];
+        
+        else {
+          if ( i != state_begin ) cout << " " << gFuncText[i] ;
+          else cout << gFuncText[i];   
+        } // end else
+        
+        state = true;
+      } // end else
+      
+      i++;
+    } // end while( ";" )
+    
+    if ( state ) cout << " ;" << endl;
+    i++;
+  } // end while( "}" )
+  
+  if ( indent.length() > 2 ) indent.erase( indent.length() - 2 );
+  else indent = "\0";
+  
+  cout << indent << "}" << endl;
+  
+  return i+1;
+} // end PrintCState()
+
+int PrintFunc( string id, int start, string indent ) { // type FuncName(...)
+  if ( gFuncRef[start] != id ) return start;
+  int i = start;
+  
+  // print "type id("
+  cout << indent << gFuncText[i] << " " << gFuncText[i+1] << gFuncText[i+2]; 
+  i += 3;
+  
+  // ptint " type ID, type & ID, type ID[ num ] )"
+  while ( gFuncText[i] != ")" ) {
+    if ( gFuncRef[i] != id ) return i;
+    
+    if ( gFuncText[i] == "," ) cout << ",";
+    else if ( gFuncText[i] == "[" ) cout << "[";
+    else if ( gFuncText[i] == "]" ) cout << " ]";
+    else cout << " " << gFuncText[i];
+    i++;
+          
+  } // end while
+  
+  if ( gFuncText[i-1] == "(" ) cout << gFuncText[i] << " {" << endl;
+  else cout << " " << gFuncText[i] << " {" << endl;
+  i += 2;
+  indent += "  ";
+  
+  return PrintCState( id, i, indent ) ;
+} // end PrintFunc()
+
+void ListFunction( string id ) {
+  int lenOfFuncRef = gFuncRef.size();
+  int nextIndex = 0; 
+  string indent = "";
+  int i = 0 ;
+  
+  while ( i < lenOfFuncRef ) {
+    if ( gFuncRef[i] == id ) {
+      nextIndex = PrintFunc( id, i, indent );
+      i = nextIndex;
+      indent += "  ";
+      
+    } // end if
+    else i++;
+    
+  } // end while
+} // end ListFunction()
+
+string CheckFirstChar( string str ) {
+  int len_lv = glexical_vec.size();
+  int len_ov = goperand_vec.size();
+  
+  for ( int i = 0 ; i < len_lv ; i++ ) {
+    if ( str == glexical_vec[i] )
+      return "\0";
+  } // end for
+  
+  for ( int i = 0 ; i < len_ov ; i++ ) {
+    if ( str == goperand_vec[i] )
+      return "\0";
+  } // end for
+  
+  if ( IsIdentifier( gToken ) ) 
+    return "\0";
+  
+  if ( IsConstant( gToken ) ) 
+    return "\0";
+  else if ( gToken[0] == '\'' ) return "'";
+    
+  return gToken;
+} // end CheckFirstChar()
+
+string Token() { 
+  string wrongToken = "\0"; 
+  
+  GetToken();
+  
+  while ( gToken == "\n" ) {
+    gNumOfLine++;
+    GetToken(); 
+  } // end while
+  
+  wrongToken = CheckFirstChar( gToken );
+  if ( gNumOfLine == 0 ) gNumOfLine = 1;
+    
+  if ( wrongToken == "\0" ) {
+    gTBuffer.push_back( gToken );
+    gTokenLine.push_back( gNumOfLine ); 
+    gCur++;
+    
+    return gToken;
+  } // end if
+  else {
+    cout << "Line " << gNumOfLine << " : unrecognized token with first char : ";
+    cout << "'" << wrongToken << "'" << endl;
+    gHasUnexpected = true;
+    
+    return "\0";
+  } // end else
+} // end Token()
+
+bool CheckDone() {
+  if ( gTBuffer[0] == "Done" ) {
+    if ( gTBuffer[1] == "(" ) {
+      if ( gTBuffer[2] == ")" ) {
+        if ( gTBuffer[3] == ";" ) {
+          gEXIT = true;
+          return true;
+        } // end if
+      } // end if
+    } // end if
+  } // end if
+  
+  return false;
+} // end CheckDone()
+
+
+bool CinCout( string t ) {
+  if ( gHasUnexpected ) return false;
+  string id = t;
+  int line = gNumOfLine;
+  
+  t = Token();
+  while ( t == ">>" || t == "<<" ) { // cin、cout 運算
+    t = Token(); // ID 或數字 
+    gCoutin = true;
+    
+    if ( Expression( t ) ) {
+      t = gTBuffer[gCur-1];
+      if ( t == ";" ) return true;
+      else if ( t != "<<" && t != ">>" ) return false;
+    } // end if 
+    else return false;
+  } // end while
+  
+  if ( CheckDefVar( id, line ) ) { // cin、cout 視為 ID 
+    gCoutinID = true;
+    if ( Expression( t ) ) return true;
+    else return false;
+  } // end if
+  
+  else {  // cin、cout 沒有宣告成 ID  
+    UndefId( id, line );
+    return false;  
+  } // end else
+} // end CinCout()
+
+int Parser( string t ) {
+    
+  if ( gHasUnexpected ) return false;
+
+  if ( t == "[" ) {
+    Unexpected_token( "[" );
+    return 0;
+  } // end if ( "[" )
+  
+  else if ( Definition( t ) ) {  // Definition & Declaration
+    
+    return 1;
+  } // end else if ( Def )
+  else if ( Statement( t ) ) {
+    
+    return 2;
+  } // end else if ( State )
+  
+  return 0;
+} // end Parser()
+
+bool FPList( string t ) { 
+  if ( gHasUnexpected ) return false;  
+  
+  if ( t == ")" ) return true;
+  string id = "\0";
+  
+  while ( IsType( t ) ) {
+    t = Token();
+      
+    if ( t == "&" || ( !IsConstant( t ) && IsIdentifier( t ) ) ) {
+      if ( t == "&" ) {
+        t = Token();
+        if ( !IsIdentifier( t ) ) {
+          Unexpected_token( t );
+          return false;
+        } // end if
+        else id = t;
+      } // end if (& ID)
+      else id = t;
+      
+      // 這裡的變數要放到大括號vec : gCSDefVar
+      gCSDefVar.push_back( id );
+      t = Token();
+      if ( t == "[" ) {
+        t = Token();
+        if ( IsConstant( t ) ) {
+          t = Token();
+          if ( t == "]" ) {
+            t = Token();
+            if ( t == ")" ) return true;
+            else if ( t == "," ) {
+              t = Token();
+              
+            } // end else if
+            else {
+              Unexpected_token( t );
+              return false;  
+            } // end else
+          } // end if ( "]" )
+          else {
+            Unexpected_token( t );
+            return false;  
+          } // end else
+        } // end if (constant)
+        else {
+          Unexpected_token( t );
+          return false;  
+        } // end else
+      } // end if ( "[" ) 
+      else if ( t == ")" ) return true;
+      else if ( t == "," ) {
+        t = Token();
+        // continue;
+      } // end else if ( "," )
+      else {
+        Unexpected_token( t );
+        return false;  
+      } // end else
+    } // end if ( & | ID )
+    else {
+      Unexpected_token( t );
+      return false;  
+    } // end else
+  } // end while (TYPE)
+  
+  Unexpected_token( t );
+  return false;
+} // end FPList()
+
+bool Definition( string t ) {
+  if ( gHasUnexpected ) return false;  
+  
+  bool isVOID = false; // 函式定義 、宣告 
+  bool isDeclare = false; // 變數宣告 
+  string wrongStr = "\0";
+  
+  if ( t == "void" || IsType( t ) ) {
+    if ( t == "void" ) isVOID = true;
+    
+    t = Token();
+    while ( !IsConstant( t ) && IsIdentifier( t ) ) {
+      t = Token();
+      
+      if ( t == "(" && !isDeclare ) {
+        bool vorF = false;
+        t = Token();
+        if ( t == "void" ) { // VOID
+          t = Token();
+          if ( t == ")" ) 
+            vorF = true; 
+          else {
+            Unexpected_token( t ); 
+            return false;
+          } // end else
+        } // end if (VOID)
+        else if ( FPList( t ) ) { // formal_parameter_list
+          vorF = true;
+          
+        } // end else if
+        else 
+          return false;
+            
+        if ( vorF ) {
+          t = Token(); // ')'之後的token 
+          if ( t == "{" ) {
+            if ( CState( t ) ) {
+              
+              return true; // ------Definition END
+            } // end if ( compound_statement )
+            else return false;
+          } // end if ( "{" )  
+          else Unexpected_token( t );  
+        } // end if
+         
+        return false;
+      } // end if ( "(" )
+      
+      
+      else if ( !isVOID ) {
+        isDeclare = true;
+        if ( t == "," ) {
+          t = Token();
+          // continue;
+            
+        } // end if ( "," )
+        else if ( t == "[" ) {
+          t = Token();
+          if ( IsConstant( t ) ) {
+            t = Token();
+            if ( t == "]" ) {
+              t = Token();
+              if ( t == ";" ) 
+                return true; // ------Declaration END
+              else if ( t == "," ) {
+                t = Token();
+                // continue;
+              } // end if ( "," )
+              else {
+                Unexpected_token( t );
+                return false;  
+              } // end else
+            } // end if ( "]" )
+            else {
+              Unexpected_token( t );
+              return false;  
+            } // end else
+          } // end if (IsNum)
+          else {
+            Unexpected_token( t );
+            return false;  
+          } // end else
+        } // end else if
+        else if ( t == ";" )
+          return true; // ------Declaration END
+        else {
+          Unexpected_token( t );
+          return false;  
+        } // end else
+      } // end if (isDeclare)
+      else {
+        Unexpected_token( t );
+        return false;  
+      } // end else
+    } // end while (IsID)
+    
+    Unexpected_token( t );
+  } // end if
+  
+  return false;
+} // end Definition()
+
+bool Declaration( string t ) {
+  if ( gHasUnexpected ) return false;  
+  
+  if ( IsType( t ) ) {
+    t = Token();
+    while ( !IsConstant( t ) && IsIdentifier( t ) ) {
+    
+      t = Token();
+      if ( t == "," ) {
+        t = Token();
+            
+      } // end if ( "," )
+      else if ( t == "[" ) {
+        t = Token();
+        if ( IsConstant( t ) ) {
+          t = Token();
+          if ( t == "]" ) {
+            t = Token();
+            if ( t == "," ) {
+              t = Token();
+              // continue;
+            } // end if
+            else if ( t == ";" )
+              return true;
+            else {
+              Unexpected_token( t );
+              return false;  
+            } // end else
+          } // end if ( "]" )
+          else {
+            Unexpected_token( t );
+            return false;  
+          } // end else
+        } // end else if (num)
+        else {
+          Unexpected_token( t );
+          return false;  
+        } // end else
+      } // end else if ( "[" )
+      else if ( t == ";" ) 
+        return true;
+      else {
+        Unexpected_token( t );
+        return false;  
+      } // end else
+    } // end while (ID)
+    
+    Unexpected_token( t );
+    
+  } // end if (TYPE)
+  
+  return false;
+} // end Declaration()
+
+bool APList( string t ) {
+  if ( gHasUnexpected ) return false;  
+  
+  gAPList = true;
+  if ( t == "(" ) {
+    gParenthesis++;
+    t = Token();  
+  } // end if
+  
+  if ( t == ")" ) {
+    gParenthesis--;
+    return true;  
+  } // end if
+  
+  if ( BExp( t ) ) {
+    gAPList = false;
+    t = gTBuffer[gCur-1];
+    
+    if ( t == ")" ) return true;
+    else Unexpected_token( t );
+  } // end if
+  
+  return false;
+} // end APList()
+
+void StoreDeclareVar( int start ) { 
+  // 大括號裡面的 Declare
+  int i = start;
+  int len = gTBuffer.size();  
+  // 因為 gTBuffer 裡面存的是 這一次全部輸入 
+  while ( i < len ) {  
+    if ( IsType( gTBuffer[i] ) ) {
+      i++;
+      while ( gTBuffer[i] != ";" ) {
+        
+        if ( gTBuffer[i] != "," )
+          gCSDefVar.push_back( gTBuffer[i] );
+          
+        i++;
+      } // end while
+    } // end if
+    else i = len;
+    
+    i++;
+  } // end while
+} // end StoreDeclareVar()
+
+bool CState( string t ) {
+  if ( gHasUnexpected ) return false;  
+  
+  // '{' { declaration | statement } '}' 
+  int start = gTBuffer.size();
+  bool contiu = true;
+  
+  if ( t == "{" ) {
+    t = Token(); 
+    if ( t == "}" ) return true;
+    gCState = true;
+    
+    while ( contiu ) { // Declaration( t ) || Statement( t ) ) {
+      if ( IsType( t ) ) {
+        if ( Declaration( t ) ) contiu = true;
+        else contiu = false;
+      } // end if
+      else if ( Statement( t ) ) contiu = true;
+      else contiu = false;
+      
+      if ( contiu ) {
+        StoreDeclareVar( start );
+        start = gTBuffer.size();
+
+        if ( gIF ) {
+          t = gTBuffer[gCur-1];
+          gIF = false; 
+        } // end if
+        else if ( gTtoken != "\0" ) {
+          t = gTtoken;
+          gTtoken = "\0";
+        } // end else if
+        else t = Token();
+        
+        if ( t == "}" ) {
+          // gCState = false;
+          return true;
+        } // end if
+      } // end if
+    } // end while
+  } // end if
+  
+  return false;
+} // end CState()
+
+bool Unary_exp( string t ) {
+  if ( gHasUnexpected ) return false;  
+  
+  bool sign = false;
+  bool pm = false;
+  
+  if ( IsPPMM( t ) ) {
+    pm = true;
+    t = Token();
+  } // end if ( PPMM )
+  else if ( IsSign( t ) ) {
+    sign = true;
+    t = Token();
+    while ( IsSign( t ) ) {
+      t = Token();
+    } // end while
+  } // end else if ( SIGN )
+  
+  if ( !IsConstant( t ) && IsIdentifier( t ) ) {
+    string id = t;
+    int line = gNumOfLine;
+    
+    if ( !CheckDefVar( id, line ) && !CheckDefFunc( id, line ) ) {
+      UndefId( id, line );
+      return false;
+    } // end if
+    
+    t = Token();
+    
+    if ( t == "(" && !pm ) { // ( actual_parameter_list )
+      if ( !CheckDefFunc( id, line ) ) {
+        UndefId( id, line );
+        return false;
+      } // end if
+      else if ( APList( t ) ) {
+        t = Token();  
+        return true;   
+      } // end else if
+      else return false;
+    } // end if
+    
+    if ( t == "[" ) { // [ expression ]
+      if ( Expression( t ) ) {
+        t = gTBuffer[gCur-1];
+        
+        if ( t == "]" ) {
+          t = Token();
+          return true;
+        } // end if
+        else Unexpected_token( t );
+      } // end if ( exp )
+      
+      return false;
+    } // end if ( "[" )
+    
+    else if ( IsPPMM( t ) && !pm ) { // ID PPMM
+      t = Token();
+      return true;
+    } // end else if
+    else return true;
+  } // end if ( Identifier )
+  
+  else if ( !pm && IsConstant( t ) ) { // Constant
+    t = Token();
+    return true;
+  } // end else if ( Constant )
+  
+  else if ( !pm && t == "(" ) { // ( expression ) 
+    if ( Expression( t ) ) {
+      t = gTBuffer[gCur-1];
+      
+      if ( t == ")" ) {
+        t = Token();
+        return true;  
+      } // end if
+      // else if ( t == ";" ) return true;
+      else Unexpected_token( t );
+    } // end if ( exp ) 
+    
+    return false;
+  } // end else if ( "(" )
+  else Unexpected_token( t );
+  
+  return false;
+} // end Unary_exp()
+
+bool RomceAndRomloe( string t ) {
+  if ( gHasUnexpected ) return false;  
+  
+  if ( t == "]" ) {
+    if ( gSquareBracket == 0 ) {
+      Unexpected_token( "]" );
+      return false;
+    } // end if
+    else {
+      gSquareBracket--;
+      return true; 
+    } // end else
+  } // end if
+  else if ( t == ")" ) {
+    
+    if ( gParenthesis == 0 ) {
+      Unexpected_token( t );
+      return false;
+    } // end if
+    else {
+      gParenthesis--;
+      return true;
+    } // end else 
+  } // end else if
+    
+  if ( IsAllCalOP( t ) ) {
+    t = Token();
+    
+    if ( Unary_exp( t ) ) { 
+      t = gTBuffer[gCur-1]; // Unary_exp裡會多讀 Token 
+      
+      if ( RomceAndRomloe( t ) ) return true;
+      else return false;
+    } // end if ( Unary_exp )
+  } // end if
+  else {
+    if ( t == "," ) {
+      if ( gAPList ) {
+        t = Token();
+        if ( BExp( t ) ) return true;  
+        else return false;  
+      } // end if (gAPList)
+      else {
+        Unexpected_token( t );  
+        return false;
+      } // end else
+    } // end if ( "," )
+    
+    if ( t == ";" ) {
+      if ( gSquareBracket == 0 && gParenthesis == 0 ) return true;  
+      else {
+        if ( gSquareBracket > 0 )
+          Unexpected_token( t );  
+        else if ( gParenthesis > 0 ) {
+          Unexpected_token( t );
+        } // end else if
+          
+        return false;
+      } // end else 
+    } // end if
+    
+    if ( t == "?" ) {
+      gRAR = true;
+      t = Token();
+      if ( BExp( t ) ) {
+        t = gTBuffer[gCur-1];
+        if ( t == ":" ) {
+          t = Token();
+          if ( BExp( t ) ) {
+            t = gTBuffer[gCur-1];
+            if ( t == ";" ) return true;
+            else Unexpected_token( t );
+          } // end if (BExp)
+        } // end if ( ":" )
+        else Unexpected_token( t ); 
+      } // end if (BExp)
+    } // end if ( "?" )
+    else if ( t == ":" ) {
+      if ( gRAR ) {
+        gRAR = false;
+        return true;  
+      } // end if
+      else {
+        Unexpected_token( t ); 
+        return false; 
+      } // end else
+    } // end else if
+    else Unexpected_token( t );
+  } // end else
+  
+  return false;
+} // end RomceAndRomloe()
+
+int OriFunc( string t, int line ) {
+  string id = t;
+  if ( id == "Done" || id == "ListAllVariables" || id == "ListAllFunctions" ) {
+    t = Token();
+    if ( t == "(" ) {
+      t = Token();
+      if ( t == ")" ) {
+        t = Token();
+        if ( t == ";" ) {
+          if ( id == "Done" ) gEXIT = true;
+          else if ( id == "ListAllVariables" ) ListAllVariables();
+          else if ( id == "ListAllFunctions" ) ListAllFunctions();
+          
+          return 2; // 進行下一輪 
+        } // end if
+        else {
+          Unexpected_token( t );
+          return 0; // 有錯 
+        } // end else
+      } // end if
+      else {
+        gParenthesis++;
+        if ( APList( t ) ) {
+          t = Token();
+          
+          if ( t == ";" ) return 2;
+          else {
+            Unexpected_token( t );
+            return 0; // 有錯 
+          } // end else
+        } // end if (APList)
+        else return 0;
+      } // end else
+    } // end if
+    else {
+      if ( CheckDefVar( id, line ) ) return 1; // 繼續看文法
+      else {
+        UndefId( id, line );
+        return 0;
+      } // end else
+    } // end else
+  } // end if
+  
+  else if ( id == "ListVariable" || id == "ListFunction" ) {
+    t = Token();
+    if ( t == "(" ) {
+      t = Token();
+      if ( t[0] == '"' ) {
+        int length = t.length();
+        string newStr = "\0"; // 變數名稱 
+        
+        // 確認字符串長度大於2，才能去掉頭尾字元
+        if ( t[length-1] != '"' || length <= 2 ) {
+          Unexpected_token( t );
+          return 0;  
+        } // end if
+        else {
+          newStr = t.substr( 1, length - 2 ); // 變數名稱  
+        } // end else
+        
+        int line = gNumOfLine;
+        
+        if ( CheckDefVar( newStr, line ) || CheckDefFunc( newStr, line ) ) { 
+          t = Token();
+          if ( t == ")" ) {
+            t = Token();
+            if ( t == ";" ) {
+              if ( id == "ListVariable" ) {
+                if ( CheckDefVar( newStr, line ) ) ListVariable( newStr );
+                else {
+                  UndefId( newStr, gNumOfLine );
+                  return 0; 
+                } // end else
+              } // end if
+              else if ( id == "ListFunction" ) {
+                if ( CheckDefFunc( newStr, line ) ) ListFunction( newStr );
+                else {
+                  UndefId( newStr, gNumOfLine );
+                  return 0; 
+                } // end else
+              } // end if
+              
+              return 2;
+            } // end if
+            else Unexpected_token( t );
+          } // end if
+          else Unexpected_token( t );
+        } // end if
+        else UndefId( newStr, line );
+        
+        return 0;
+      } // end if
+      else {
+        gParenthesis++;
+        if ( APList( t ) ) {
+          t = Token();
+          
+          if ( t == ";" ) return 2;
+          else {
+            Unexpected_token( t );
+            return 0; // 有錯 
+          } // end else
+        } // end if (APList)
+        else return 0;
+        
+      } // end else
+    } // end if
+    else {
+      // 前面取過Token了 
+      if ( CheckDefVar( id, line ) ) return 1; // 繼續看文法
+      else {
+        UndefId( id, line );
+        return 0; 
+      } // end else
+    } // end else
+  } // end else if
+  else {
+    // t = Token();
+    return 1; // 繼續看文法 
+    
+  } // end else
+} // end OriFunc()
+
+bool BExp( string t ) { // basic_expression
+  if ( gHasUnexpected ) return false;  
+  
+  string id = "\0";
+  int line = 0;
+  int of = 0;
+  
+  // identifier 
+  if ( ( !IsConstant( t ) && IsIdentifier( t ) ) || gCoutinID ) {
+    id = t;
+    line = gNumOfLine;
+    
+    if ( !gCoutinID && !gCoutin ) {
+      of = OriFunc( t, line );  
+      if ( of == 0 ) return false;
+      else if ( of == 2 ) return true; 
+      // 1不多讀 Token了 
+    } // end if
+    
+    if ( !CheckDefVar( id, line ) && !CheckDefFunc( id, line ) ) {
+      UndefId( id, line );
+      
+      return false; 
+    } // end if
+    
+    // cout << "1358 " << t << endl;
+    // if ( gCoutin ) t = Token();
+    // else t = gTBuffer[gCur-1];
+    t = Token();
+    // cout << "1371 " << t << endl;
+    
+    if ( t == "(" ) {
+      if ( !CheckDefFunc( id, line ) ) {
+        UndefId( id, line );
+        return false;
+      } // end if
+    
+      if ( APList( t ) ) {
+        t = gTBuffer[gCur-1];
+        if ( t == ")" ) {
+          t = Token();
+          if ( RomceAndRomloe( t ) ) return true;
+          else return false;
+        } // end if
+        else Unexpected_token( t );
+      } // end if (APList)
+      
+      return false;
+    } // end if ( "(" )
+    
+    if ( !gCoutinID ) {
+      if ( !CheckDefVar( id, line ) ) {
+        UndefId( id, line );
+        return false;
+      } // end if
+    } // end if
+        
+    if ( t == "[" ) {      
+      if ( Expression( t ) ) {
+        t = gTBuffer[gCur-1];
+        if ( t == "]" ) t = Token();  
+        else {
+          Unexpected_token( t );
+          return false;
+        } // end else
+      } // end if (Expression)
+      else return false;
+    } // end if ( "[" )  
+    
+    if ( IsGrant( t ) ) {
+      t = Token();
+      if ( BExp( t ) ) {
+          
+        return true;  
+      } // end if
+      else return false;
+    } // end if
+    
+    else if ( IsPPMM( t ) ) {
+      t = Token();
+      if ( RomceAndRomloe( t ) ) return true;
+    } // end if (PPMM)
+    
+    else if ( RomceAndRomloe( t ) ) {
+      return true;
+    } // end if (RomceAndRomloe)
+
+    return false;
+  } // end if ( identifier )
+  
+  //  ( PP | MM ) Identifier rest_of_PPMM_Identifier_started_basic_exp
+  else if ( IsPPMM( t ) ) {
+    t = Token();
+    if ( !IsConstant( t ) && IsIdentifier( t ) ) { 
+      if ( !CheckDefVar( t, gNumOfLine ) ) {
+        UndefId( t, gNumOfLine );
+        return false;
+      } // end if
+        
+      t = Token();
+      //  [ '[' expression ']' ] romce_and_romloe
+      if ( t == "[" ) { 
+        if ( Expression( t ) ) {
+          t = gTBuffer[gCur-1];
+          if ( t == "]" ) t = Token();
+          else {
+            Unexpected_token( t );
+            return false; 
+          } // end else
+        } // end if
+        else return false;
+      } // end if ( "[" )
+      
+      if ( RomceAndRomloe( t ) ) return true;
+      else return false;
+    } // end if ( identifier )
+    else Unexpected_token( t );
+  } // end else if ( PPMM )
+  
+  else if ( IsSign( t ) ) {
+    if ( Unary_exp( t ) ) {
+      t = gTBuffer[gCur-1];
+      
+      if ( RomceAndRomloe( t ) ) return true;
+      else return false;
+    } // end if (Unary_exp)
+    else return false;
+  } // end else if ( IsSign )
+  
+  // ( Constant | '(' expression ')' ) romce_and_romloe
+  else if ( IsConstant( t ) || t == "(" ) {
+    if ( t == "(" ) {
+      if ( Expression( t ) ) {
+        t = gTBuffer[gCur-1];
+        
+        if ( t == ";" ) return true;
+        else if ( t == ")" ) t = Token();
+        else {
+          Unexpected_token( t );
+          return false;
+        } // end else
+      } // end if
+      else return false;
+    } // end if ( "(" )
+    else t = Token();
+    
+    if ( RomceAndRomloe( t ) ) return true;   
+    else return false;
+  } // end else if ( Constant | '(' expression ')' )
+  else Unexpected_token( t );
+    
+  return false;
+} // end BExp()
+
+bool Expression( string t ) {
+  if ( gHasUnexpected ) return false;
+  
+  if ( t == "(" ) {
+    gParenthesis++;
+    t = Token();
+    
+  } // end if
+  else if ( t == "[" ) {
+    gSquareBracket++;
+    t = Token();  
+    
+  } // end else if
+    
+  if ( IsType( t ) || t == "void" ) {
+    Unexpected_token( t );
+    return false;
+  } // end if
+  
+  if ( BExp( t ) ) return true;
+  else return false;
+} // end Expression()
+
+bool Statement( string t ) {
+  if ( gHasUnexpected ) return false;  
+  
+  if ( t == ";" ) {
+    return true;
+  } // end if ( ";" )
+  else if ( t == "return" ) {
+    t = Token();
+    if ( Expression( t ) ) {
+      return true; 
+    } // end if ( exp )
+    
+    return false;
+  } // end if ( "return" )
+  
+  else if ( t == "cout" || t == "cin" ) {
+    if ( CinCout( t ) ) return true;
+    return false;  
+  } // end else if
+  
+  else if ( t == "{" ) {
+    if ( CState( t ) ) {
+      return true;
+    } // end if ( CState )
+    
+    return false;   
+  } // end if ( "{" )
+  
+  else if ( t == "(" ) {
+    if ( Expression( t ) ) {
+      t = Token();
+      if ( t == ";" ) return true;
+      else {
+        Unexpected_token( t );
+        return false; 
+      } // end else
+    } // end if
+    
+    return false;
+  } // end else if
+  
+  else if ( t == "if" ) {
+    // if '(' expression ')' statement [ ELSE statement ] 
+    t = Token();
+    if ( t == "(" ) {
+      gIF = true;
+      if ( Expression( t ) ) {
+        gIF = false;
+        
+        t = Token();
+        if ( Statement( t ) ) {
+          t = Token();
+          
+          if ( gCState && t == "}" ) {
+            gIF = true;
+            return true;  
+          } // end if
+          else if ( t == "else" ) {
+            t = Token();
+            if ( Statement( t ) ) return true;
+            else return false;
+          } // end if ( "else" )
+          
+          // else if ( Statement( t ) ) return true;
+          else {
+            gTtoken = t;
+            return true;  
+          } // end else
+        } // end if ( state )
+      } // end if ( exp )
+    } // end if ( "(" )
+    else Unexpected_token( t );
+    
+    return false;
+  } // end else if ( "if" )
+  
+  else if ( t == "while" ) {
+    // WHILE '(' expression ')' statement
+    t = Token();
+    if ( t == "(" ) {
+      gIF = true;
+      if ( Expression( t ) ) {
+        gIF = false;
+        t = Token();
+        
+        if ( Statement( t ) ) {
+          return true;
+        } // end if ( state ) 
+        else return false;
+      } // end if ( exp )  
+    } // end if ( "(" )
+    else Unexpected_token( t );
+    
+    return false;
+  } // end else if ( "while" )
+  
+  else if ( t == "do" ) {
+    // DO statement WHILE '(' expression ')' ';' 
+    t = Token();
+    gDO = true;
+    if ( Statement( t ) ) {
+      t = Token();
+      if ( t == "while" ) {
+        t = Token();
+        if ( t == "(" ) {
+          if ( Expression( t ) ) {
+            t = gTBuffer[gCur-1] ;
+            t = Token();
+            
+            if ( t == ";" ) return true;  
+            else Unexpected_token( t );
+          } // end if ( Expression )
+        } // end if ( "(" )
+        else Unexpected_token( t );
+      } // end if ( "while" )
+      else Unexpected_token( t );
+    } // end if ( state )
+    
+    return false;
+  } // end else if ( "do" )
+  
+  else if ( Expression( t ) ) {
+    return true;
+  } // end else if ( Expression )
+  
+  return false;
+} // end Statement()
+
+bool IsConstant( string str ) {
+  if ( IsNum( str ) || str == "true" || str == "false" ) 
+    return true;
+  
+  if ( str[0] == '"' && str[str.length()-1] == '"' ) 
+    return true;
+    
+  if ( str[0] == '\'' ) {
+    if ( str.size() == 3 ) return true;
+  } // end if
+  
+  return false;
+} // end IsConstant()
+
+bool IsLexical_vec( string str ) {
+  int len_lex = glexical_vec.size(); 
+  for ( int i = 0 ; i < len_lex ; i++ ) 
+    if ( glexical_vec[i] == str ) return true;
+    
+  return false;
+} // end IsLexical_vec()
+
+bool IsIdentifier( string str ) {
+  if ( IsLexical_vec( str ) ) return false;
+  
+  if ( !IsLetter( str[0] ) )
+    return false;
+  else {
+    int i = 1;
+    while ( i < str.size() ) {
+      if ( !IsDigit( str[i] ) && !IsLetter( str[i] ) && str[i] != '_' )
+        return false;
+      else
+        i++;
+        
+    } // end while
+    
+    return true;
+  } // end else
+} // end IsIdentifier()
+
+bool IsInt( string str ) {
+  int i = 0; 
+  while ( i < str.size() ) {
+    if ( !IsDigit( str[i] ) ) return false;
+    else i++;
+  } // end while
+  
+  return true;
+} // end IsInt()
+
+bool IsNum( string str ) {
+  int len = str.size();
+  bool findDot = false;
+  for ( int i = 0 ; i < len ; i++ ) {
+    if ( str[i] == '.' ) findDot = true;
+    else if ( !IsDigit( str[i] ) ) return false;
+    
+  } // end for
+
+  return true;
+} // end IsNum()
+
+bool IsDigit( char ch ) {
+  if ( 48 <= ch && ch <= 57 ) return true;
+  else return false;
+  
+} // end IsDigit()
+
+bool IsLetter( char ch ) {
+  if ( ( 65 <= ch && ch <= 90 ) || ( 97 <= ch && ch <= 122 ) ) 
+    return true;
+  else 
+    return false;
+  
+} // end IsLetter()
+
+bool IsOparend( string str ) {
+  int len_ov = goperand_vec.size();  
+  for ( int i = 0 ; i < len_ov ; i++ ) {
+    if ( str == goperand_vec[i] )
+      return true;
+  } // end for
+  
+  return false;
+} // end IsOparend()
+
+bool IsType( string str ) { 
+  //  INT | CHAR | FLOAT | STRING | BOOL 
+  for ( int i = 0 ; i < 5 ; i++ ) {
+    if ( glexical_vec[i] == str ) return true;
+  } // end for
+  
+  return false;
+} // end IsType()
+
+bool IsGrant( string t ) { // 給予值(有等號的) 
+  if ( t == "=" ) return true;
+  for ( int i = 24 ; i < 29 ; i++ ) {
+    if ( t == goperand_vec[i] ) return true;
+  } // end for
+  
+  return false;
+} // end IsGrant() 
+
+bool IsPPMM( string t ) {
+  if ( t == "++" || t == "--" ) return true;
+  else return false;
+} // end IsPPMM()
+
+bool IsArithOP( string t ) {
+  for ( int i = 6 ; i < 12 ; i++ ) {
+    if ( t == goperand_vec[i] ) return true;
+  } // end for
+  
+  return false;
+} // end IsArithOP()
+
+bool IsLogicalOP( string t ) {
+  if ( t == "&&" || t == "||" )
+    return true;  
+    
+  for ( int i = 12 ; i < 20 ; i++ ) {
+    if ( t == goperand_vec[i] ) return true;
+  } // end for
+  
+  return false;
+} // end IsLogicalOP()
+
+bool IsSign( string t ) {
+  if ( t == "+" || t == "-" || t == "!" ) return true;
+  else return false;
+} // end IsSign()
+
+bool IsShiftOP( string t ) {
+  if ( t == "<<" || t == ">>" ) return true;
+  else return false;  
+} // end IsShiftOP()
+
+bool IsAllCalOP( string t ) { // Calculate Op
+  if ( IsShiftOP( t ) || IsLogicalOP( t ) || IsArithOP( t ) )
+    return true; 
+  else 
+    return false;
+} // end IsAllCalOP()
+
+void GetToken() {
+  string token = "\0";
+  char inputChar = '\0';
+  bool findToken = false;
+  bool findDot = false;
+  
+  while ( !findToken ) {
+    
+    // has NextToken
+    if ( gNextToken != "\0" ) {
+      gToken = gNextToken;
+      gNextToken = "\0";
+      findToken = true;
+      
+    } // end if
+    else {
+      // get char
+      if ( gExtraGetChar != '\0' ) {
+        inputChar = gExtraGetChar;
+        gExtraGetChar = '\0';
+      } // end if
+      else inputChar = cin.get();
+      
+      
+      // white space
+      if ( inputChar == ' ' || inputChar == '\t' || inputChar == '\n' ) {  
+        char tmp = inputChar;
+        
+        if ( token != "\0" ) {
+          gToken = token;
+          token = "\0";
+          findToken = true;
+          inputChar = '\0';
+            
+        } // end if  
+        
+        if ( tmp == '\n' ) {
+          if ( findToken ) gNextToken = "\n";
+          else gToken = "\n";
+          
+          findToken = true;
+          
+        } // end if
+        
+        // continue;
+      } // end if (white space)
+        
+      // comment & div & /=
+      else if ( inputChar == '/' ) {
+        inputChar = cin.get(); // get next char
+        
+        // comment
+        if ( inputChar == '/' ) {
+          if ( token != "\0" ) {
+            gToken = token;
+            token = "\0";
+            findToken = true;
+            inputChar = '\0';
+            
+          } // end if
+          
+          while ( inputChar != '\n' ) {
+            
+            inputChar = cin.get();  
+          } // end while
+          
+          if ( findToken ) gNextToken = "\n";
+          else {
+            gToken = "\n";
+            token = "\0";
+            findToken = true;
+            inputChar = '\0';
+          } // end else
+          
+          inputChar = '\0';
+          
+        } // end if (comment)
+        
+        else if ( inputChar == '=' ) {
+          if ( token != "\0" ) {
+            gToken = token;
+            token = "\0";
+            findToken = true;
+            inputChar = '\0';
+            
+          } // end if
+          
+          if ( findToken ) gNextToken = "/=";
+          else gToken = "/=";
+            
+          token = "\0";
+          findToken = true;
+          inputChar = '\0';
+            
+        } // end else if
+        
+        // div
+        else {
+          gExtraGetChar = inputChar;
+          if ( token != "\0" ) {
+            gToken = token;
+            gNextToken = "/";
+            findToken = true;
+            
+          } // end if
+          else {
+            gToken = "/";
+            findToken = true;
+          } // end else
+        } // end else(div)
+      } // end else if (comment & div & /= )
+      
+      // STRING
+      else if ( inputChar == '"' ) {
+        if ( token != "\0" ) {
+          gToken = token;
+          findToken = true;
+          gExtraGetChar = '"';
+          inputChar = '\0';
+        } // end if 
+        else {
+          // gNextToken = "\"";
+          token = '"';
+          inputChar = cin.get(); 
+          bool out = false;
+          while ( inputChar != '"' && !out ) {
+            if ( inputChar == '\n' ) {  // inputChar == ';' || 
+              if ( token != "\0" ) {
+                gToken = token;
+                findToken = true;
+              } // end if
+              
+              if ( findToken ) gNextToken = "\n";
+              else gToken = "\n";
+              
+              inputChar = '\0';
+              // cout << "Syntax error: string missing terminating '\"'." << endl;
+              out = true;  
+            
+            } // end if
+            else {
+              // gNextToken += inputChar ;
+              token += inputChar;
+              inputChar = cin.get();  
+            } // end else
+          } // end while
+          
+          if ( findToken ) {
+            gExtraGetChar = inputChar;
+          } // end if
+          else {
+            if ( inputChar == '"' ) {
+              // gNextToken += inputChar ;
+              token += inputChar ; 
+              gToken = token;
+              findToken = true;
+              inputChar = '\0';
+              
+            } // end if
+            else {
+              if ( token != "\0" ) {
+                gToken = token;
+                findToken = true;
+              } // end if
+              
+              if ( findToken ) gNextToken = inputChar;
+              else gToken = inputChar;
+            
+              // gNextToken = "\0";
+            } // end else  
+          } // end else
+        } // end else
+      } // end else if ( "..." )
+        
+      // char
+      else if ( inputChar == '\'' ) {      
+        if ( token != "\0" ) {
+          gToken = token;
+          findToken = true;
+          
+        } // end if 
+      
+        inputChar = cin.get();
+        gNextToken = "'";
+        bool outwhile = false;
+        while ( inputChar != '\'' && !outwhile ) {
+          if ( inputChar == ';' || inputChar == '\n' ) {
+            outwhile = true;
+          } // end if
+          else {
+            gNextToken += inputChar ;
+            inputChar = cin.get();  
+          } // end else
+        } // end while
+        
+        if ( inputChar == '\'' ) {
+          gNextToken += inputChar ; 
+          inputChar = '\0'; 
+        } // end if
+        else {
+          gExtraGetChar = inputChar;
+          inputChar = '\0';
+        } // end else
+          
+      } // end else if ('c')
+        
+      else {
+        char tempChar = '\0';
+        string tempStr = "\0";
+        tempChar = inputChar;
+        tempStr = inputChar;
+        
+        if ( tempChar == '=' || tempChar == '&' || tempChar == '|' ) {
+          inputChar = cin.get();
+        
+          if ( token != "\0" ) {
+            gToken = token;
+            token = "\0";
+            findToken = true;
+            
+          } // end if
+        
+          if ( inputChar == tempChar ) {
+            if ( findToken ) gNextToken = tempStr+inputChar;
+            else gToken = tempStr+inputChar;
+            
+            token = "\0";
+            findToken = true;
+            inputChar = '\0';
+          } // end if
+          else {
+            if ( findToken ) gNextToken = tempStr;
+            else gToken = tempStr;
+            
+            token = "\0";
+            findToken = true;
+            gExtraGetChar = inputChar;
+            inputChar = '\0';
+            
+          } // end else
+        } // end if
+      
+        else if ( tempChar == '*' || tempChar == '%' || tempChar == '!' ) {
+          inputChar = cin.get();
+          if ( token != "\0" ) {
+            gToken = token;
+            token = "\0";
+            findToken = true;
+             
+          } // end if
+        
+          if ( inputChar == '=' ) {
+            if ( findToken ) gNextToken = tempStr+inputChar;
+            else gToken = tempStr+inputChar;
+            
+            token = "\0";
+            findToken = true;
+            inputChar = '\0';
+          } // end if
+          else {
+            if ( findToken ) gNextToken = tempStr;
+            else gToken = tempStr;
+            
+            token = "\0";
+            findToken = true;
+            gExtraGetChar = inputChar;
+            inputChar = '\0';
+            
+          } // end else
+        } // end else if
+        
+        else if ( tempChar == '<' || tempChar == '>'  || tempChar == '+' || tempChar == '-' ) {
+          inputChar = cin.get();
+            
+          if ( token != "\0" ) {
+            gToken = token;
+            token = "\0";
+            findToken = true;
+          
+          } // end if
+          
+          if ( inputChar == '=' ) {
+            if ( findToken ) gNextToken = tempStr+inputChar; 
+            else gToken = tempStr+inputChar;
+            
+            token = "\0";
+            findToken = true;
+            inputChar = '\0';
+          } // end if
+          else if ( inputChar == tempChar ) {
+            if ( findToken ) gNextToken = tempStr+inputChar;
+            else gToken = tempStr+inputChar;
+            
+            token = "\0";
+            findToken = true;
+            inputChar = '\0';
+          } // end else if
+          else {
+            if ( findToken ) gNextToken = tempStr; 
+            else gToken = tempStr;
+            
+            token = "\0";
+            findToken = true;
+            gExtraGetChar = inputChar;
+            inputChar = '\0';
+            
+          } // end else
+        } // end if
+        
+        else if ( IsDigit( tempChar ) || IsLetter( tempChar ) || tempChar == '.' ||  tempChar == '_' ) {
+          bool ctu = false;
+          if ( findDot && tempChar == '.' ) {
+            gToken = token;
+            token = "\0";
+            findToken = true;
+            gExtraGetChar = tempChar;
+            ctu = true; // continue;
+          } // end if
+          else if ( tempChar == '.' ) findDot = true;
+          
+          if ( !ctu ) {
+            if ( token == "\0" ) token = tempChar; 
+            else token += tempChar;  
+          } // end if
+        } // end else if
+      
+        else {
+          if ( token != "\0" ) {
+            gToken = token;
+            token = "\0";
+            findToken = true;
+            
+          } // end if
+            
+          if ( findToken ) gNextToken = tempStr;
+          else gToken = tempStr;
+          
+          token = "\0";
+          findToken = true;
+          inputChar = '\0';
+            
+        } // end else
+      } // end else
+    } // end else
+  } // end while
+} // end GetToken()
