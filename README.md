@@ -40,3 +40,12 @@ Token 處理：透過 IsDigit, IsLetter 與運算子辨識邏輯，實作 Longes
 全域狀態控制：利用 gParenthesis (圓括號) 與 gSquareBracket (方括號) 監控語法對稱性。
 
 系統函數支援：內建辨識 ListAllVariables(), ListAllFunctions() 與 Done() 等指令。
+     
+    # The system-supported functions of OurC system are listed below.
+    ListAllVariables(); // just the names of the (global) variables,
+                        // sorted (from smallest to greatest)
+    ListAllFunctions(); // just the names of the (user-defined)
+                        // functions, sorted
+    ListVariable(char name[]); // the definition of a particular variable
+    ListFunction(char name[]); // the definition of a particular function
+    Done(); // exit the interpreter
