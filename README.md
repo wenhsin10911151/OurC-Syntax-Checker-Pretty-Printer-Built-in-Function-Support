@@ -2,7 +2,7 @@
 
 ### OurC Interpreter: Syntax Checker & Pretty Printer
 ## 📝 專案簡介 (Project Overview)
-本專案實作了一個 OurC 語言 的編譯器前端系統。透過手寫的詞法分析器（Lexer）與語法分析器（Parser），系統能夠辨識特定的程式語法、檢測多種層級的錯誤，並將程式碼重新格式化（Pretty Printing）輸出。
+本專案實作了一個 OurC 語言(c-like)的編譯器前端系統。透過手寫的詞法分析器（Lexer）與語法分析器（Parser），系統能夠辨識特定的程式語法、檢測多種層級的錯誤，並將程式碼重新格式化（Pretty Printing）輸出。
 
 
 ## 🚀 核心技術實作 (Technical Implementation)
